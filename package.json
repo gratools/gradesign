@@ -1,15 +1,13 @@
 {
-  "name": "forma-studio",
+  "name": "gradesign",
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
   "packageManager": "pnpm@11.25.0",
   "scripts": {
-    "dev": "pnpm --filter @forma/web dev",
-    "dev:server": "pnpm --filter @forma/server dev",
-    "dev:collab": "pnpm --filter @forma/collaboration dev",
-    "build": "pnpm --filter @forma/web build && node scripts/copy-build.mjs",
-    "typecheck": "pnpm -r --if-present typecheck",
-    "test": "pnpm -r --if-present test"
+    "dev": "pnpm --filter @gradesign/web dev",
+    "build": "pnpm --filter @gradesign/web build && node scripts/copy-build.mjs",
+    "typecheck": "pnpm --filter @gradesign/web typecheck",
+    "test": "node scripts/test-storage.cjs && node scripts/test-qr.cjs && node --test scripts/fonts.test.mjs"
   }
 }

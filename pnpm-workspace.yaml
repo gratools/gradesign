@@ -1,12 +1,7 @@
 packages:
-  - apps/*
-  - packages/*
+  - apps/web
 allowBuilds:
-  '@prisma/client': true
-  '@prisma/engines': true
-  prisma: true
-  esbuild: true
   sharp: true
   canvas: false
   core-js: false
-  leveldown: true
+  protobufjs: false
