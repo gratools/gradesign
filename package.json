@@ -1,0 +1,15 @@
+{
+  "name": "forma-studio",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "packageManager": "pnpm@11.25.0",
+  "scripts": {
+    "dev": "pnpm --filter @forma/web dev",
+    "dev:server": "pnpm --filter @forma/server dev",
+    "dev:collab": "pnpm --filter @forma/collaboration dev",
+    "build": "pnpm --filter @forma/web build && node scripts/copy-build.mjs",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test"
+  }
+}
