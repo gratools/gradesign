@@ -1,0 +1,165 @@
+[
+  {
+    "version": "5.3.0",
+    "family": "inter",
+    "files": [
+      "inter-latin-400-italic.woff2",
+      "inter-latin-400-normal.woff2",
+      "inter-latin-700-italic.woff2",
+      "inter-latin-700-normal.woff2"
+    ],
+    "source": "https://registry.npmjs.org/@fontsource/inter/-/inter-5.3.0.tgz",
+    "integrity": "sha512-RofMylZmjlJEfELXeNHFWBRcSs75rGU/6bV2S2jfnvv/3rPXPGe0LgUJTklcHZ9lM4OZmAVFhcJPnACfb91A3g==",
+    "package": "@fontsource/inter",
+    "license": "OFL-1.1"
+  },
+  {
+    "version": "5.3.0",
+    "family": "roboto",
+    "files": [
+      "roboto-latin-400-italic.woff2",
+      "roboto-latin-400-normal.woff2",
+      "roboto-latin-700-italic.woff2",
+      "roboto-latin-700-normal.woff2"
+    ],
+    "source": "https://registry.npmjs.org/@fontsource/roboto/-/roboto-5.3.0.tgz",
+    "integrity": "sha512-BapRJOWYP+LZ21zp+wBQjfpPYKRoxc4LspJ/RLuI+HSMBD5u/X4O+ESDrSvEqDSy0rAl7GwBJ+09mdc16cVQ1Q==",
+    "package": "@fontsource/roboto",
+    "license": "OFL-1.1"
+  },
+  {
+    "version": "5.3.0",
+    "family": "open-sans",
+    "files": [
+      "open-sans-latin-400-italic.woff2",
+      "open-sans-latin-400-normal.woff2",
+      "open-sans-latin-700-italic.woff2",
+      "open-sans-latin-700-normal.woff2"
+    ],
+    "source": "https://registry.npmjs.org/@fontsource/open-sans/-/open-sans-5.3.0.tgz",
+    "integrity": "sha512-V1bdMlGNyZrJwzrdusshMOw2YR0aqYDL7kOo9dkxUEKl8dFv66A9HLckOOXl572sG/7ohhDQrCrTFGSn9LZcSw==",
+    "package": "@fontsource/open-sans",
+    "license": "OFL-1.1"
+  },
+  {
+    "version": "5.3.0",
+    "family": "lato",
+    "files": [
+      "lato-latin-400-italic.woff2",
+      "lato-latin-400-normal.woff2",
+      "lato-latin-700-italic.woff2",
+      "lato-latin-700-normal.woff2"
+    ],
+    "source": "https://registry.npmjs.org/@fontsource/lato/-/lato-5.3.0.tgz",
+    "integrity": "sha512-0WhF/4rhrw+ErIyneKvhHn2YAl+xf8GDtllgOgOzDmeaSlLQtjpChXaQOpWhG2BchQW0WJy2zLV12Hdg0ndOMw==",
+    "package": "@fontsource/lato",
+    "license": "OFL-1.1"
+  },
+  {
+    "version": "5.3.0",
+    "family": "montserrat",
+    "files": [
+      "montserrat-latin-400-italic.woff2",
+      "montserrat-latin-400-normal.woff2",
+      "montserrat-latin-700-italic.woff2",
+      "montserrat-latin-700-normal.woff2"
+    ],
+    "source": "https://registry.npmjs.org/@fontsource/montserrat/-/montserrat-5.3.0.tgz",
+    "integrity": "sha512-iQPDtZOnmM5ih4JBGaMSXisRap0ixb9bAUw2hDtY7EjVfaqiiNlKtVuJl9XclxUwtwMMHNcWXfQR6zI9x05+Tg==",
+    "package": "@fontsource/montserrat",
+    "license": "OFL-1.1"
+  },
+  {
+    "version": "5.3.0",
+    "family": "poppins",
+    "files": [
+      "poppins-latin-400-italic.woff2",
+      "poppins-latin-400-normal.woff2",
+      "poppins-latin-700-italic.woff2",
+      "poppins-latin-700-normal.woff2"
+    ],
+    "source": "https://registry.npmjs.org/@fontsource/poppins/-/poppins-5.3.0.tgz",
+    "integrity": "sha512-cms1nM7U6SN8epIV1WMVOV8VsA645aSm3wHfzIQnkk188U341ThbJGSl2Sv54V29gnDbT2arMPfLzvVIIVCceQ==",
+    "package": "@fontsource/poppins",
+    "license": "OFL-1.1"
+  },
+  {
+    "version": "5.3.0",
+    "family": "lora",
+    "files": [
+      "lora-latin-400-italic.woff2",
+      "lora-latin-400-normal.woff2",
+      "lora-latin-700-italic.woff2",
+      "lora-latin-700-normal.woff2"
+    ],
+    "source": "https://registry.npmjs.org/@fontsource/lora/-/lora-5.3.0.tgz",
+    "integrity": "sha512-OK1g1z01rHVPqO5aw/FOIoDqc46KKYZdgL3NOLkxLWDk6QhDHhdr/h2BV1cke6gTvR1tzpDfdKyUkGsC+sQLeQ==",
+    "package": "@fontsource/lora",
+    "license": "OFL-1.1"
+  },
+  {
+    "version": "5.3.0",
+    "family": "playfair-display",
+    "files": [
+      "playfair-display-latin-400-italic.woff2",
+      "playfair-display-latin-400-normal.woff2",
+      "playfair-display-latin-700-italic.woff2",
+      "playfair-display-latin-700-normal.woff2"
+    ],
+    "source": "https://registry.npmjs.org/@fontsource/playfair-display/-/playfair-display-5.3.0.tgz",
+    "integrity": "sha512-uJSABalvdWc10fEPppQjQocamT21LEyRfzzWfRfqbkPz+sRv+kKpYDKyluBUskvJREkJTos9epj1WjQROGu99Q==",
+    "package": "@fontsource/playfair-display",
+    "license": "OFL-1.1"
+  },
+  {
+    "version": "5.3.0",
+    "family": "merriweather",
+    "files": [
+      "merriweather-latin-400-italic.woff2",
+      "merriweather-latin-400-normal.woff2",
+      "merriweather-latin-700-italic.woff2",
+      "merriweather-latin-700-normal.woff2"
+    ],
+    "source": "https://registry.npmjs.org/@fontsource/merriweather/-/merriweather-5.3.0.tgz",
+    "integrity": "sha512-9LpPsNTYzRALj468Uj1K9Usl5eXk991L/kKmcpdWbTF1na9NfMyAXMgUABlMReViU1MYBz9kJ8jEzEOtX9qGDg==",
+    "package": "@fontsource/merriweather",
+    "license": "OFL-1.1"
+  },
+  {
+    "version": "5.3.0",
+    "family": "bebas-neue",
+    "files": [
+      "bebas-neue-latin-400-normal.woff2"
+    ],
+    "source": "https://registry.npmjs.org/@fontsource/bebas-neue/-/bebas-neue-5.3.0.tgz",
+    "integrity": "sha512-nCxMEb9Bg9sjNWm9TIOsvHKDMLRUfEZPWpLgYu6m9KavZZVSA/WoHzI5wROwqA+eNwEi/PNBAcB5Co7HA3S0Cw==",
+    "package": "@fontsource/bebas-neue",
+    "license": "OFL-1.1"
+  },
+  {
+    "version": "5.3.0",
+    "family": "oswald",
+    "files": [
+      "oswald-latin-400-normal.woff2",
+      "oswald-latin-700-normal.woff2"
+    ],
+    "source": "https://registry.npmjs.org/@fontsource/oswald/-/oswald-5.3.0.tgz",
+    "integrity": "sha512-16r2aHActe0pH+9FLdk/74/YxXM7HpGak05kAzx3RvSToiJwGvyhv6GvckPz+YuZmvL1nxWbEop2jAXRcXYPRg==",
+    "package": "@fontsource/oswald",
+    "license": "OFL-1.1"
+  },
+  {
+    "version": "5.3.0",
+    "family": "space-mono",
+    "files": [
+      "space-mono-latin-400-italic.woff2",
+      "space-mono-latin-400-normal.woff2",
+      "space-mono-latin-700-italic.woff2",
+      "space-mono-latin-700-normal.woff2"
+    ],
+    "source": "https://registry.npmjs.org/@fontsource/space-mono/-/space-mono-5.3.0.tgz",
+    "integrity": "sha512-FrpBMOVWn3PRdRHlrZWC55X3kZG/2BTH7SM5ZyS/bky3iKya2BturI5lk+t0RoDQL2JyHzURsVq/EisCsxpI5A==",
+    "package": "@fontsource/space-mono",
+    "license": "OFL-1.1"
+  }
+]
