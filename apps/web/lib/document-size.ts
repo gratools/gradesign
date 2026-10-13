@@ -29,7 +29,7 @@ export function resizeCanvasJSON(
   json: DesignJSON,
   width: number,
   height: number,
-  fitContents = true,
+  fitContents = false,
 ): DesignJSON {
   const size = validateCanvasSize(width, height);
   const previous = getCanvasSize(json);

@@ -4,7 +4,10 @@ import { resizeCanvasJSON } from "./document-size";
 export const DESIGN_WIDTH = 960;
 export const DESIGN_HEIGHT = 640;
 
+import { libraryTemplates, libraryScene } from "./template-library";
+
 export const templates = [
+  ...libraryTemplates,
   {
     id: "studio",
     name: "Room for possibility",
@@ -75,11 +78,13 @@ export function createTemplate(
   width = DESIGN_WIDTH,
   height = DESIGN_HEIGHT,
 ): DesignJSON {
-  return resizeCanvasJSON(templateScene(id), width, height);
+  return resizeCanvasJSON(templateScene(id), width, height, true);
 }
 
 function templateScene(id: string): DesignJSON {
   objectIndex = 0;
+  const library = libraryScene(id);
+  if (library) return library;
   if (id === "blank")
     return { version: "6.9.0", background: "#ffffff", objects: [] };
   if (id === "botanical")

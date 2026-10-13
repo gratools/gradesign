@@ -103,6 +103,12 @@ export type SelectionInfo = {
   fontWeight?: string | number;
   fontStyle?: string;
   underline?: boolean;
+  stroke: string;
+  strokeWidth: number;
+  cornerRadius: number;
+  canRound: boolean;
+  canBorder: boolean;
+  canRemoveBackground: boolean;
   opacity: number;
   angle: number;
   locked: boolean;
@@ -132,7 +138,9 @@ export type CanvasHandle = {
   addShape: (
     kind: "rectangle" | "circle" | "triangle" | "star" | "line",
   ) => void;
-  addImage: (src: string) => Promise<void>;
+  removeImageBackground: (process: (src: string) => Promise<string>) => Promise<void>;
+  addSVG: (svg: string, name: string) => Promise<void>;
+  addImage: (src: string, name?: string) => Promise<void>;
   updateSelection: (props: Record<string, unknown>) => void;
   captureTextSelection: () => void;
   refreshFonts: () => void;
@@ -155,5 +163,6 @@ export type CanvasHandle = {
   renameLayer: (id: string, name: string) => void;
   export: (format: "png" | "jpeg" | "svg", multiplier?: number) => string;
   setBackground: (color: string) => void;
+  setBackgroundImage: (src: string | null) => Promise<void>;
   applyTemplate: (id: string) => Promise<void>;
 };

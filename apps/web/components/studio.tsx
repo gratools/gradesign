@@ -20,7 +20,6 @@ import {
   ChevronRight,
   ChevronsUpDown,
   Circle,
-  Cloud,
   Copy,
   Crown,
   Download,
@@ -64,7 +63,6 @@ import {
   Unlock,
   Upload,
   User,
-  Users,
   X,
   ZoomIn,
   Bold,
@@ -78,23 +76,25 @@ import type {
 } from "@/lib/canvas-types";
 import { validateCanvasJSON } from "@/lib/canvas-types";
 import { templates, createTemplate } from "@/lib/templates";
-import { useCollaboration } from "@/lib/use-collaboration";
+
 import {
-  api,
-  API_URL,
   downloadFile,
   freshProject,
   isProject,
-  STORAGE_KEY,
   type Project,
   type DesignPage,
 } from "@/lib/project";
 import { Button } from "./ui/button";
-import CloudProjects from "./cloud-projects";
+
+import Presentation from "./presentation";
+import ElementLibrary from "./element-library";
+import QRMaker from "./qr-maker";
+import BackgroundRemover from "./background-remover";
 import ColorPicker from "./color-picker";
 import FontManager from "./font-manager";
 import FontSizeInput from "./font-size-input";
 import SizePicker from "./size-picker";
+import {listUploads, saveUpload, deleteUpload, type SavedUpload} from "@/lib/uploads";
 import { getCanvasSize, resizeCanvasJSON } from "@/lib/document-size";
 import { fontOptions, ensureFontsForCanvas, ensureFontFamily, embedFontsInSVG, type CustomFont } from "@/lib/fonts";
 import { readProjects, saveProject, deleteProject, restoreProject, readTrashedProjects } from "@/lib/project-storage";
@@ -109,7 +109,7 @@ const DesignCanvas = dynamic(() => import("./design-canvas"), {
 });
 type Tool = "Design" | "Elements" | "Text" | "Uploads" | "Brand" | "Projects";
 type Modal = "export" | "share" | "account" | "help" | null;
-const COLLAB_URL = process.env.NEXT_PUBLIC_COLLAB_URL ?? "";
+
 const tools: { name: Tool; icon: LucideIcon }[] = [
   { name: "Design", icon: LayoutTemplate },
   { name: "Elements", icon: Shapes },
@@ -149,6 +149,7 @@ function IconButton({
   );
 }
 function TemplateThumb({ id, small = false }: { id: string; small?: boolean }) {
+  if (id.startsWith("library-")) return <img loading="lazy" style={{width:"100%",aspectRatio:"3/2",objectFit:"contain",borderRadius:8}} src={`${process.env.NEXT_PUBLIC_BASE_PATH || ""}/templates/${id}.png`} alt="" />;
   return (
     <div className={`template-art art-${id} ${small ? "small" : ""}`}>
       <span className="art-kicker">
@@ -197,6 +198,7 @@ export default function Studio() {
   const canvas = useRef<CanvasHandle>(null),
     stage = useRef<HTMLDivElement>(null),
     imageInput = useRef<HTMLInputElement>(null),
+    backgroundInput = useRef<HTMLInputElement>(null),
     projectInput = useRef<HTMLInputElement>(null),
     activeRef = useRef(""),
     skipSave = useRef(false);
@@ -229,6 +231,9 @@ export default function Studio() {
     [animate, setAnimate] = useState(false),
     [paletteColor, setPaletteColor] = useState("#2f4bff"),
     [brandTarget, setBrandTarget] = useState<"selection" | "background">("selection");
+  const [uploads, setUploads] = useState<SavedUpload[]>([]);
+  const [deletedUpload, setDeletedUpload] = useState<SavedUpload | null>(null);
+  const [uploadBusy, setUploadBusy] = useState(false);
   const [pageLoading, setPageLoading] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
   const [projectBusy, setProjectBusy] = useState(false);
@@ -240,35 +245,8 @@ export default function Studio() {
   const fontRequest = useRef(0);
   const resizeHistory = useRef(new Map<string, { pages: DesignPage[]; comments: Project["comments"] }>());
   const { width: pageWidth, height: pageHeight } = getCanvasSize(project?.pages.find(p => p.id === activePage)?.canvas);
-  const [user, setUser] = useState<{
-      id: string;
-      name: string;
-      email: string;
-    } | null>(null),
-    [authMode, setAuthMode] = useState<"login" | "signup">("signup"),
-    [authError, setAuthError] = useState(""),
-    [workspaceId, setWorkspaceId] = useState(""),
-    [remoteId, setRemoteId] = useState(""),
-    [remoteRevision, setRemoteRevision] = useState(0),
-    [shareUrl, setShareUrl] = useState("");
-  const [collabEnabled, setCollabEnabled] = useState(false),
-    [collabJoined, setCollabJoined] = useState(false);
-  const [presence] = useState(() => ({
-    name: `Guest ${Math.floor(Math.random() * 900 + 100)}`,
-    color: ["#8b5cf6", "#0d9488", "#d97706", "#db2777"][
-      Math.floor(Math.random() * 4)
-    ],
-  }));
-  const collabEnabledRef = useRef(false),
-    canvasLoading = useRef(false),
-    canvasLoadRevision = useRef(0),
-    remotePages = useRef<DesignPage[] | null>(null),
-    lastCursorSent = useRef(0),
-    loadedSnapshot = useRef<{
-      json: Record<string, unknown>;
-      thumbnail: string;
-    } | null>(null);
-  collabEnabledRef.current = collabEnabled;
+  const canvasLoading = useRef(false), canvasLoadRevision = useRef(0),
+    loadedSnapshot = useRef<{json: Record<string, unknown>; thumbnail: string} | null>(null);
   const notify = useCallback((message: string) => setToast(message), []);
   const loadPage = useCallback(
     async (page: DesignPage, fonts: CustomFont[] = projectRef.current?.fonts ?? []) => {
@@ -310,9 +288,7 @@ export default function Studio() {
                       item.id === page.id
                         ? {
                             ...item,
-                            canvas: collabEnabledRef.current
-                              ? item.canvas
-                              : snapshot.json,
+                            canvas: snapshot.json,
                             thumbnail: snapshot.thumbnail,
                           }
                         : item,
@@ -327,104 +303,6 @@ export default function Studio() {
     },
     [notify],
   );
-  const collaboration = useCollaboration({
-    enabled:
-      collabEnabled &&
-      Boolean(project) &&
-      Boolean(API_URL ? remoteId : project?.id),
-    roomId: API_URL ? remoteId : (project?.id ?? ""),
-    serverUrl: COLLAB_URL || undefined,
-    user: { name: user?.name ?? presence.name, color: presence.color },
-    initialPages: project?.pages ?? [],
-    initialFonts: project?.fonts ?? [],
-    onRemoteFonts: fonts => {
-      if (!collabEnabledRef.current) return;
-      if (projectRef.current) projectRef.current = { ...projectRef.current, fonts };
-      setProject(p => p ? { ...p, fonts } : p);
-    },
-    onRemotePages: (pages) => {
-      if (!collabEnabledRef.current) return;
-      if (!pages.length) {
-        collabEnabledRef.current = false;
-        setCollabEnabled(false);
-        setCollabJoined(false);
-        notify(
-          "This live room has no pages. Your local copy is still available.",
-        );
-        return;
-      }
-      remotePages.current = pages;
-      setProject((p) =>
-        p ? { ...p, pages, updatedAt: new Date().toISOString() } : p,
-      );
-      const page = pages.find((p) => p.id === activeRef.current) ?? pages[0];
-      // Start suppression before Fabric loads. Its completion emits onChange;
-      // that snapshot must never be republished as a local edit.
-      void loadPage(page);
-    },
-    getToken: API_URL
-      ? async () => {
-          if (!remoteId)
-            throw new Error("Save the design to your workspace first.");
-          const result = await api<{ token: string }>(
-            `/api/designs/${remoteId}/collaboration-token`,
-            { method: "POST" },
-          );
-          return result.token;
-        }
-      : undefined,
-  });
-  useEffect(() => {
-    if (collabEnabled && collaboration.status === "connected")
-      setCollabJoined(true);
-  }, [collabEnabled, collaboration.status]);
-  useEffect(() => {
-    if (!collabEnabled || !collabJoined || !project) return;
-    if (remotePages.current === project.pages) {
-      remotePages.current = null;
-      return;
-    }
-    remotePages.current = null;
-    try {
-      collaboration.updatePages(project.pages);
-    } catch (e) {
-      collabEnabledRef.current = false;
-      setCollabEnabled(false);
-      setCollabJoined(false);
-      notify(
-        e instanceof Error
-          ? e.message
-          : "Live editing stopped. Your design is saved locally.",
-      );
-    }
-  }, [
-    collabEnabled,
-    collabJoined,
-    project?.pages,
-    collaboration.updatePages,
-    notify,
-  ]);
-  useEffect(() => {
-    const guard = (e: KeyboardEvent) => {
-      if (!collabEnabled) return;
-      const target = e.target as HTMLElement | null;
-      if (
-        target?.closest(
-          "input,textarea,select,[contenteditable=true],[role=dialog]",
-        )
-      )
-        return;
-      const key = e.key.toLowerCase(),
-        undo = (e.ctrlKey || e.metaKey) && (key === "z" || key === "y");
-      if (undo || !collabJoined) {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        if (undo) notify("Leave live editing to use local undo and redo.");
-      }
-    };
-    window.addEventListener("keydown", guard, true);
-    return () => window.removeEventListener("keydown", guard, true);
-  }, [collabEnabled, collabJoined, notify]);
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -435,20 +313,12 @@ export default function Studio() {
       catch (e) { notify(e instanceof Error ? e.message : "Some fonts could not be loaded."); }
       if (cancelled) return;
       setSavedProjects(saved);
+      void listUploads().then(items => {if(!cancelled)setUploads(items);}).catch(() => notify("The uploads library could not be opened."));
       void readTrashedProjects().then(items => { if (!cancelled) setTrashedProjects(items); }).catch(() => {});
       setProject(next);
       setActivePage(next.pages[0].id);
       activeRef.current = next.pages[0].id;
     })();
-    if (API_URL)
-      api<{ user: typeof user; workspaces: { id: string }[] }>("/api/session")
-        .then((s) => {
-          setUser(s.user);
-          setWorkspaceId(s.workspaces[0]?.id ?? "");
-        })
-        .catch(() =>
-          notify("Your backend is unavailable. Local editing still works."),
-        );
     return () => { cancelled = true; };
   }, [notify]);
   useEffect(() => {
@@ -591,13 +461,6 @@ export default function Studio() {
     [pages[index], pages[target]] = [pages[target], pages[index]];
     setProject({ ...project, pages });
   };
-  const leaveCollaboration = () => {
-    collabEnabledRef.current = false;
-    setCollabEnabled(false);
-    setCollabJoined(false);
-    remotePages.current = null;
-    collaboration.setCursor(null);
-  };
   const openProject = async (p: Project) => {
     try {
       const validated = {
@@ -608,10 +471,10 @@ export default function Studio() {
         })),
       };
       await ensureFontsForCanvas(validated.pages[0].canvas, validated.fonts ?? []);
-      leaveCollaboration();
+      
       setProject(validated);
-      setRemoteId("");
-      setShareUrl("");
+      
+      
       await loadPage(validated.pages[0], validated.fonts ?? []);
       notify("Project opened");
       return true;
@@ -623,11 +486,11 @@ export default function Studio() {
     }
   };
   const newProject = async () => {
-    leaveCollaboration();
+    
     const p = freshProject();
     setProject(p);
-    setRemoteId("");
-    setShareUrl("");
+    
+    
     await loadPage(p.pages[0], []);
     setTool("Design");
     notify("Your new design is ready");
@@ -646,8 +509,8 @@ export default function Studio() {
       setSavedProjects(remaining);
       setTrashedProjects(await readTrashedProjects());
       if (isCurrent) {
-        leaveCollaboration();
-        setRemoteId(""); setShareUrl("");
+        
+         
         let next = remaining[0] ?? freshProject();
         try { await ensureFontsForCanvas(next.pages[0].canvas, next.fonts ?? []); }
         catch { next = freshProject(); }
@@ -703,10 +566,13 @@ export default function Studio() {
         reader.readAsDataURL(file);
       });
       try {
-        await canvas.current?.addImage(src);
-        notify("Image added to your design");
+        const item: SavedUpload = {id:crypto.randomUUID(), name:file.name, src, createdAt:new Date().toISOString()};
+        await saveUpload(item);
+        setUploads(await listUploads());
+        await canvas.current?.addImage(src, file.name);
+        notify("Image saved in Uploads and added to your design");
       } catch {
-        notify("That image could not be loaded.");
+        notify("Could not save or add the image. Check available browser storage.");
       }
     }
   };
@@ -767,139 +633,6 @@ export default function Studio() {
       setBusy(false);
     }
   };
-  const cloudSave = async () => {
-    if (!project) return;
-    if (collabEnabled) {
-      notify(
-        "Leave live editing before saving a workspace snapshot or creating a view link.",
-      );
-      return;
-    }
-    setBusy(true);
-    try {
-      if (!user) {
-        setModal("account");
-        return;
-      }
-      const json = !canvasLoading.current
-        ? canvas.current?.getJSON()
-        : undefined;
-      const snapshot = json
-        ? {
-            ...project,
-            pages: project.pages.map((page) =>
-              page.id === activeRef.current ? { ...page, canvas: json } : page,
-            ),
-          }
-        : project;
-      setProject(snapshot);
-      const body = remoteId
-        ? {
-            revision: remoteRevision,
-            title: snapshot.title,
-            document: snapshot,
-          }
-        : { workspaceId, title: snapshot.title, document: snapshot };
-      const result = await api<{ design: { id: string; revision: number } }>(
-        remoteId ? `/api/designs/${remoteId}` : "/api/designs",
-        { method: remoteId ? "PATCH" : "POST", body: JSON.stringify(body) },
-      );
-      setRemoteId(result.design.id);
-      setRemoteRevision(result.design.revision);
-      notify("Saved to your workspace");
-      return result.design.id;
-    } catch (e) {
-      notify(e instanceof Error ? e.message : "Cloud save failed");
-    } finally {
-      setBusy(false);
-    }
-  };
-  const createShare = async () => {
-    const id = await cloudSave();
-    if (!id) return;
-    try {
-      const result = await api<{ token: string; url: string }>(
-        `/api/designs/${id}/share`,
-        { method: "POST", body: JSON.stringify({ permission: "VIEW" }) },
-      );
-      setShareUrl(result.url);
-      notify("View-only link created");
-    } catch (e) {
-      notify(e instanceof Error ? e.message : "Could not create link");
-    }
-  };
-  const toggleCollaboration = async () => {
-    if (collabEnabled) {
-      leaveCollaboration();
-      notify("Live editing ended. Your design is saved on this device.");
-      return;
-    }
-    if (!project || !COLLAB_URL) return;
-    if (API_URL && !(await cloudSave())) return;
-    const json = !canvasLoading.current ? canvas.current?.getJSON() : undefined;
-    if (json)
-      setProject((p) =>
-        p
-          ? {
-              ...p,
-              pages: p.pages.map((page) =>
-                page.id === activeRef.current
-                  ? { ...page, canvas: json }
-                  : page,
-              ),
-            }
-          : p,
-      );
-    remotePages.current = null;
-    setCollabJoined(false);
-    collabEnabledRef.current = true;
-    setCollabEnabled(true);
-    setModal(null);
-    notify("Connecting to your live editing room…");
-  };
-  const sendCursor = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!collabEnabled || !collabJoined || collaboration.status !== "connected")
-      return;
-    const now = performance.now();
-    if (now - lastCursorSent.current < 50) return;
-    lastCursorSent.current = now;
-    const rect = e.currentTarget.getBoundingClientRect();
-    collaboration.setCursor({
-      pageId: activeRef.current,
-      x: Math.max(
-        0,
-        Math.min(pageWidth, ((e.clientX - rect.left) * pageWidth) / rect.width),
-      ),
-      y: Math.max(
-        0,
-        Math.min(pageHeight, ((e.clientY - rect.top) * pageHeight) / rect.height),
-      ),
-    });
-  };
-  const auth = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setAuthError("");
-    setBusy(true);
-    const data = Object.fromEntries(new FormData(e.currentTarget));
-    try {
-      await api(`/api/auth/${authMode}`, {
-        method: "POST",
-        body: JSON.stringify(data),
-      });
-      const session = await api<{
-        user: typeof user;
-        workspaces: { id: string }[];
-      }>("/api/session");
-      setUser(session.user);
-      setWorkspaceId(session.workspaces[0]?.id ?? "");
-      setModal(null);
-      notify("Welcome to your workspace");
-    } catch (e) {
-      setAuthError(e instanceof Error ? e.message : "Unable to sign in");
-    } finally {
-      setBusy(false);
-    }
-  };
   const resizePages = async (width: number, height: number, all: boolean, fitContents: boolean) => {
     if (!project || !canvas.current) return;
     const current = canvas.current.getJSON();
@@ -951,7 +684,7 @@ export default function Studio() {
     return (
       <div className="boot-screen">
         <span className="wordmark">
-          <img src={(process.env.NEXT_PUBLIC_BASE_PATH ?? "") + "/brand/logo.svg"} alt="gradesign." className="brand-wordmark" />
+          <img src={(process.env.NEXT_PUBLIC_BASE_PATH ?? "") + "/brand/logo.svg"} alt="gradesign." className="brand-wordmark" /><span className="early-access">Early access</span>
         </span>
         <LoaderCircle className="spin" />
       </div>
@@ -965,7 +698,7 @@ export default function Studio() {
             onClick={() => setTool("Projects")}
             aria-label="Open gradesign. projects"
           >
-            <img src={(process.env.NEXT_PUBLIC_BASE_PATH ?? "") + "/brand/logo.svg"} alt="gradesign." className="brand-wordmark" />
+            <img src={(process.env.NEXT_PUBLIC_BASE_PATH ?? "") + "/brand/logo.svg"} alt="gradesign." className="brand-wordmark" /><span className="early-access">Early access</span>
           </button>
           <div className="top-divider" />
           <button
@@ -983,43 +716,27 @@ export default function Studio() {
             onBlur={() => setProject(p => p && !p.title.trim() ? { ...p, title: "Unnamed project" } : p)}
           />
           <span className="save-status" role="status" aria-live="polite">
-            {collabEnabled ? (
-              <>
-                <Users size={15} />
-                {collaboration.status === "connected"
-                  ? `Live • ${collaboration.peers.length + 1}`
-                  : collaboration.status === "error"
-                    ? "Connection unavailable"
-                    : collaboration.status === "disconnected"
-                      ? "Reconnecting…"
-                      : "Connecting…"}
-              </>
-            ) : (
-              <>
-                <CheckCheck size={15} />
-                {saveState}
-              </>
-            )}
+<CheckCheck size={15} />{saveState}
           </span>
           <div className="top-actions">
             <button
               className="avatar"
               onClick={() => setModal("account")}
-              aria-label="Your account"
+              aria-label="About saving"
             >
-              {user?.name?.slice(0, 1) ?? "Y"}
+              Y
             </button>
-            <Button variant="secondary" onClick={() => setPresentation(true)}>
+            <Button variant="secondary" onClick={() => { const json = canvas.current?.getJSON(); if (json) setProject(p => p ? { ...p, pages: p.pages.map(page => page.id === activeRef.current ? { ...page, canvas: json } : page) } : p); setPresentation(true); }}>
               <Play size={15} />
               Present
             </Button>
             <Button onClick={() => setModal("share")}>
-              <Users size={16} />
-              Share <ChevronDown size={14} />
+              <Download size={16} />
+              Download <ChevronDown size={14} />
             </Button>
           </div>
         </header>
-        <div className="editor-body" inert={pageLoading || projectBusy || (collabEnabled && !collabJoined)} aria-busy={pageLoading || projectBusy}>
+        <div className="editor-body" inert={presentation || pageLoading || projectBusy} aria-busy={pageLoading || projectBusy}>
           <nav className="tool-rail" aria-label="Editor tools">
             {tools.map(({ name, icon: Icon }) => (
               <button
@@ -1067,7 +784,7 @@ export default function Studio() {
                     />
                   </label>
                   <div className="filter-pills">
-                    {["All", "Social", "Presentation"].map((f) => (
+                    {["All", "Social", "Presentation", "Events", "Editorial"].map((f) => (
                       <button
                         key={f}
                         className={filter === f ? "selected" : ""}
@@ -1078,9 +795,20 @@ export default function Studio() {
                     ))}
                   </div>
                   <div className="section-label">
-                    Curated for you <Sparkles size={14} />
+                    {templates.length - 1} editable templates <Sparkles size={14} />
                   </div>
                   <div className="template-grid">
+                    <button
+                      className="template-card"
+                      onClick={() => canvas.current?.applyTemplate("blank")}
+                    >
+                      <div className="blank-template">
+                        <Plus size={25} />
+                        <span>A fresh start</span>
+                      </div>
+                      <div className="template-label">Blank canvas</div>
+                      <small>Make space for anything</small>
+                    </button>
                     {templates
                       .filter(
                         (t) =>
@@ -1090,9 +818,7 @@ export default function Studio() {
                               .toLowerCase()
                               .includes(search.toLowerCase())) &&
                           (filter === "All" ||
-                            (filter === "Social"
-                              ? t.id !== "midnight"
-                              : t.id === "midnight")),
+                            t.category.includes(filter)),
                       )
                       .map((t) => (
                         <button
@@ -1111,23 +837,11 @@ export default function Studio() {
                             <ArrowUpRight size={13} />
                           </div>
                           <small>
-                            {t.id === "midnight"
-                              ? "Presentation"
-                              : "Social & editorial"}
+                            {t.category}
                           </small>
                         </button>
                       ))}
-                    <button
-                      className="template-card"
-                      onClick={() => canvas.current?.applyTemplate("blank")}
-                    >
-                      <div className="blank-template">
-                        <Plus size={25} />
-                        <span>A fresh start</span>
-                      </div>
-                      <div className="template-label">Blank canvas</div>
-                      <small>Make space for anything</small>
-                    </button>
+
                   </div>
                   <div className="creative-tip">
                     <span>✳</span>
@@ -1171,16 +885,8 @@ export default function Studio() {
                       </button>
                     ))}
                   </div>
-                  <div className="section-label">Composition</div>
-                  <Button
-                    variant="secondary"
-                    onClick={() => {
-                      canvas.current?.addShape("circle");
-                      update({ fill: project.colors[0], scaleX: 2, scaleY: 2 });
-                    }}
-                  >
-                    Add a statement circle <ArrowUpRight size={16} />
-                  </Button>
+                  <QRMaker key={"qr" + project.id + activePage} onAdd={async (src, name) => { await canvas.current?.addImage(src, name); }} />
+                  <ElementLibrary key={project.id + activePage} onSVG={async (svg, name) => { await canvas.current?.addSVG(svg, name); }} onEmoji={async (src, name) => { await canvas.current?.addImage(src, name); }} />
                   <div className="info-card">
                     <MousePointer2 size={22} />
                     <b>A few useful moves</b>
@@ -1226,6 +932,11 @@ export default function Studio() {
               )}
               {tool === "Uploads" && (
                 <>
+                  <div className="section-label">Page background</div>
+                  <Button variant="secondary" onClick={() => backgroundInput.current?.click()}><ImagePlus size={16} />Upload background image</Button>
+                  <p className="micro-copy">The image fills the page, with edges cropped to fit. PNG, JPG, WebP or GIF, up to 8 MB.</p>
+                  {project.pages[pageIndex]?.canvas.backgroundImage && <Button variant="secondary" onClick={() => void canvas.current?.setBackgroundImage(null)}>Remove background image</Button>}
+                  <div className="section-label">Image elements</div>
                   <p className="panel-subtitle">
                     Bring your own point of view.
                   </p>
@@ -1245,12 +956,20 @@ export default function Studio() {
                     <span>or click to browse your files</span>
                     <small>PNG, JPG, WebP, GIF · up to 8 MB</small>
                   </button>
+                  <div className="upload-library">
+                    {uploads.map(item => <div className="upload-card" key={item.id}>
+                      <button disabled={pageLoading} aria-label={"Add upload " + item.name} onClick={() => void canvas.current?.addImage(item.src,item.name).catch(() => notify("Image could not be added."))}><img src={item.src} alt="" /><span>{item.name}</span></button>
+                      <button className="toolbar-button" disabled={pageLoading} aria-label={"Use as background " + item.name} onClick={() => void canvas.current?.setBackgroundImage(item.src).catch(() => notify("Background could not be added."))}>Use as background</button>
+                      <button className="toolbar-button" disabled={uploadBusy} aria-label={"Delete upload " + item.name} onClick={async () => {setUploadBusy(true);try{await deleteUpload(item.id);setUploads(await listUploads());setDeletedUpload(item);notify("Removed from Uploads. Images already in designs are kept.");}catch{notify("Could not delete this upload.");}finally{setUploadBusy(false);}}}><Trash2 size={14}/>Delete</button>
+                    </div>)}
+                  </div>
+                  {!uploads.length && <p className="micro-copy">Your uploaded images will appear here for reuse across projects.</p>}
+                  {deletedUpload && <button className="toolbar-button" disabled={uploadBusy} onClick={async()=>{setUploadBusy(true);try{await saveUpload(deletedUpload);setUploads(await listUploads());setDeletedUpload(null);}catch{notify("Could not restore the upload.");}finally{setUploadBusy(false);}}}>Undo upload deletion</button>}
                   <div className="info-card">
                     <Lock size={21} />
                     <b>Your files stay yours</b>
                     <p>
-                      Images are embedded in your design and saved on this
-                      device. Export an editable project to keep a backup.
+                      Uploads stay in this browser. Deleting an upload does not remove images already placed in designs. Export an editable project to keep a backup.
                     </p>
                   </div>
                 </>
@@ -1302,7 +1021,7 @@ export default function Studio() {
                       <button type="submit" className="icon-button" aria-label="Add brand color"><Plus size={17} /></button>
                     </form>
                   </div>
-                  <FontManager key={project.id} fonts={project.fonts ?? []} disabled={collabEnabled} notify={notify} onAdd={font => {
+                  <FontManager key={project.id} fonts={project.fonts ?? []} disabled={false} notify={notify} onAdd={font => {
                     setProject(p => p && p.id === project.id ? { ...p, fonts: [...(p.fonts ?? []), font], updatedAt: new Date().toISOString() } : p);
                     canvas.current?.refreshFonts();
                   }} />
@@ -1353,37 +1072,16 @@ export default function Studio() {
                         </div>
                         {p.id === project.id && <Check size={16} />}
                       </button>
-                      <IconButton icon={Trash2} label={`Delete project ${p.title.trim() || "Unnamed project"}`} disabled={collabEnabled || projectBusy} onClick={() => setDeleteTarget(p)} />
+                      <IconButton icon={Trash2} label={`Delete project ${p.title.trim() || "Unnamed project"}`} disabled={projectBusy} onClick={() => setDeleteTarget(p)} />
                       </div>
                     ))}
                   </div>
                   <details className="project-trash">
                     <summary>Trash ({trashedProjects.length})</summary>
-                    <p className="micro-copy">Deleted designs stay on this device until restored. Cloud copies are unaffected.</p>
+                    <p className="micro-copy">Deleted designs stay on this device until restored.</p>
                     {trashedProjects.map(p => <div className="trash-row" key={p.id}><span>{p.title.trim() || "Unnamed project"}</span><button className="toolbar-button" disabled={projectBusy} onClick={() => void recoverProject(p.id)} aria-label={`Restore project ${p.title.trim() || "Unnamed project"}`}>Restore</button></div>)}
                     {!trashedProjects.length && <p className="micro-copy">Trash is empty.</p>}
                   </details>
-                  <Button
-                    variant="secondary"
-                    disabled={busy || collabEnabled}
-                    onClick={() =>
-                      API_URL ? void cloudSave() : setModal("account")
-                    }
-                  >
-                    <Cloud size={16} />
-                    Save to workspace
-                  </Button>
-                  {API_URL && user && (
-                    <CloudProjects
-                      refreshKey={remoteRevision}
-                      onOpen={async (document, id, revision) => {
-                        if (await openProject(document)) {
-                          setRemoteId(id);
-                          setRemoteRevision(revision);
-                        }
-                      }}
-                    />
-                  )}
                 </>
               )}
             </aside>
@@ -1394,13 +1092,13 @@ export default function Studio() {
                 <IconButton
                   icon={Undo2}
                   label="Undo · Ctrl Z"
-                  disabled={!history[0] || collabEnabled}
+                  disabled={!history[0]}
                   onClick={() => canvas.current?.undo()}
                 />
                 <IconButton
                   icon={Redo2}
                   label="Redo · Ctrl Shift Z"
-                  disabled={!history[1] || collabEnabled}
+                  disabled={!history[1]}
                   onClick={() => canvas.current?.redo()}
                 />
               </div>
@@ -1492,6 +1190,7 @@ export default function Studio() {
                 <>
                   <ColorPicker value={String(project.pages[pageIndex]?.canvas.background ?? "#ffffff")} colors={project.colors} label="Page background color" onChange={color => canvas.current?.setBackground(color)} />
                   <span className="toolbar-label">Page background</span>
+                  <button className="toolbar-button" onClick={() => backgroundInput.current?.click()}><ImagePlus size={16} />Image</button>
                   <div className="toolbar-rule" />
                   <button
                     className="toolbar-button"
@@ -1507,7 +1206,7 @@ export default function Studio() {
               )}
               <div className="toolbar-spacer" />
               {selection?.textSelection && <span className="text-range-hint" title="Formatting applies to highlighted characters">{selection.textSelection.end - selection.textSelection.start} selected{selection.mixed?.length ? " · Mixed" : ""}</span>}
-              <SizePicker width={pageWidth} height={pageHeight} pageCount={project.pages.length} onResize={resizePages} disabled={collabEnabled} />
+              <SizePicker width={pageWidth} height={pageHeight} pageCount={project.pages.length} onResize={resizePages} disabled={false} />
               <button
                 className={`toolbar-button ${grid ? "active" : ""}`}
                 onClick={() => setGrid(!grid)}
@@ -1577,11 +1276,6 @@ export default function Studio() {
                 <div
                   className={`canvas-paper ${animate ? "animate-paper" : ""}`}
                   style={{ width: pageWidth * zoom, height: pageHeight * zoom }}
-                  onPointerMove={sendCursor}
-                  onPointerLeave={() => {
-                    lastCursorSent.current = 0;
-                    collaboration.setCursor(null);
-                  }}
                 >
                   <DesignCanvas
                     ref={canvas}
@@ -1596,51 +1290,6 @@ export default function Studio() {
                     zoom={zoom}
                     grid={grid}
                   />
-                  {collabEnabled &&
-                    collaboration.peers
-                      .filter((peer) => peer.cursor?.pageId === activePage)
-                      .map((peer) => (
-                        <div
-                          key={peer.clientId}
-                          aria-label={`${peer.name}\'s cursor`}
-                          style={{
-                            position: "absolute",
-                            left:
-                              Math.max(0, Math.min(pageWidth, peer.cursor!.x)) * zoom,
-                            top:
-                              Math.max(0, Math.min(pageHeight, peer.cursor!.y)) * zoom,
-                            zIndex: 25,
-                            pointerEvents: "none",
-                            color: peer.color,
-                          }}
-                        >
-                          <MousePointer2
-                            size={21}
-                            fill={peer.color}
-                            stroke="white"
-                            strokeWidth={1.6}
-                          />
-                          <span
-                            style={{
-                              display: "block",
-                              marginLeft: 16,
-                              marginTop: -3,
-                              padding: "3px 7px",
-                              borderRadius: 5,
-                              background: peer.color,
-                              color: "#fff",
-                              fontSize: 11,
-                              fontWeight: 600,
-                              whiteSpace: "nowrap",
-                              maxWidth: 160,
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                            }}
-                          >
-                            {peer.name}
-                          </span>
-                        </div>
-                      ))}
                   {rightPanel === "comments" &&
                     project.comments
                       .filter((c) => c.pageId === activePage)
@@ -1911,6 +1560,15 @@ export default function Studio() {
                         onClick={() => canvas.current?.align("bottom")}
                       />
                     </div>
+                    {selection?.canRemoveBackground && <BackgroundRemover key={project.id + activePage + selection.id} apply={async process => { await canvas.current?.removeImageBackground(process); }} />}
+                    {selection?.canBorder && <>
+                      <div className="section-label">Border & corners</div>
+                      <ColorPicker value={selection.stroke} colors={project.colors} label="Border color" onChange={stroke => update({ stroke, strokeWidth: selection.strokeWidth || 4 })} />
+                      <div className="property-fields">
+                        <label>{selection.type === "line" ? "Line thickness" : "Border width"}<div><input type="number" aria-label="Border width" min="0" max="100" value={selection.strokeWidth} onChange={e => update({ strokeWidth: Math.max(0, Math.min(100, Number(e.target.value))), stroke: selection.stroke })} /><span>px</span></div></label>
+                        {selection.canRound && <label>Corner radius<div><input type="number" aria-label="Corner radius" min="0" max="1000" value={selection.cornerRadius} onChange={e => update({ cornerRadius: Math.max(0, Math.min(1000, Number(e.target.value))) })} /><span>px</span></div></label>}
+                      </div>
+                    </>}
                     <div className="property-fields">
                       <label>
                         Opacity
@@ -2016,31 +1674,20 @@ export default function Studio() {
             </aside>
           )}
         </div>
-        {presentation && (
-          <div className="presentation-controls">
-            <Button
-              variant="secondary"
-              disabled={pageIndex === 0}
-              onClick={() => void switchPage(project.pages[pageIndex - 1])}
-            >
-              <ChevronLeft size={18} />
-            </Button>
-            <span>
-              {pageIndex + 1} / {project.pages.length}
-            </span>
-            <Button
-              variant="secondary"
-              disabled={pageIndex === project.pages.length - 1}
-              onClick={() => void switchPage(project.pages[pageIndex + 1])}
-            >
-              <ChevronRight size={18} />
-            </Button>
-            <Button onClick={() => setPresentation(false)}>
-              <X size={16} />
-              Exit presentation
-            </Button>
-          </div>
-        )}
+        {presentation && <Presentation project={project} initialPage={pageIndex} onExit={() => setPresentation(false)} />}
+        <input ref={backgroundInput} type="file" hidden accept="image/png,image/jpeg,image/webp,image/gif" onChange={async e => {
+          const file = e.target.files?.[0]; e.target.value = "";
+          if (!file) return;
+          if (!["image/png", "image/jpeg", "image/webp", "image/gif"].includes(file.type) || file.size > 8 * 1024 * 1024) { notify("Choose a PNG, JPG, WebP or GIF image under 8 MB."); return; }
+          const targetProject = project.id, targetPage = activeRef.current;
+          try {
+            const src = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(file); });
+            if (projectRef.current?.id !== targetProject || activeRef.current !== targetPage) return;
+            await saveUpload({id:crypto.randomUUID(), name:file.name, src, createdAt:new Date().toISOString()});
+            setUploads(await listUploads());
+            await canvas.current?.setBackgroundImage(src); notify("Background image saved in Uploads");
+          } catch (error) { notify(error instanceof Error ? error.message : "Could not load background image."); }
+        }} />
         <input
           ref={imageInput}
           type="file"
@@ -2082,16 +1729,14 @@ export default function Studio() {
                 ) : modal === "help" ? (
                   <Sparkles size={25} />
                 ) : (
-                  <Users size={25} />
+                  <Download size={25} />
                 )}
               </div>
               <Dialog.Title>
                 {modal === "export"
                   ? "Good things are made to be shared."
                   : modal === "account"
-                    ? user
-                      ? "Your workspace"
-                      : "A space for your ideas."
+                    ? "Your personal studio"
                     : modal === "help"
                       ? "A little help goes a long way."
                       : "Your next big idea. Out in the world."}
@@ -2100,10 +1745,10 @@ export default function Studio() {
                 {modal === "export"
                   ? "Choose the perfect format for your design."
                   : modal === "account"
-                    ? "Create, save, and keep everything together."
+                    ? "Saved in your browser. Back up with a project file."
                     : modal === "help"
                       ? "A few shortcuts to keep your creativity flowing."
-                      : "Export your creation or save it to a connected workspace."}
+                      : "Download your design or an editable project backup."}
               </Dialog.Description>
               {modal === "export" && (
                 <div className="dialog-form">
@@ -2201,225 +1846,12 @@ export default function Studio() {
                     }}
                   >
                     <FileJson size={17} />
-                    Share an editable project file
+                    Download editable project
                   </Button>
-                  {COLLAB_URL && (
-                    <>
-                      <div className="dialog-divider" />
-                      <div className="section-label">
-                        <Users size={15} />
-                        Live editing
-                      </div>
-                      <p className="micro-copy">
-                        {collabEnabled
-                          ? "Changes to pages and elements are shared live. Local undo and workspace snapshots are paused."
-                          : "Join a shared room to edit pages and elements together. Existing room content becomes the current design."}
-                      </p>
-                      <Button
-                        variant="secondary"
-                        disabled={busy}
-                        onClick={() => void toggleCollaboration()}
-                      >
-                        <Users size={16} />
-                        {busy
-                          ? "Preparing your room…"
-                          : collabEnabled
-                            ? "Leave live editing"
-                            : API_URL && !user
-                              ? "Sign in to edit together"
-                              : "Start live editing"}
-                      </Button>
-                      {collabEnabled && (
-                        <>
-                          <p className="micro-copy" role="status">
-                            {collaboration.status === "connected"
-                              ? "Connected · " +
-                                (collaboration.peers.length + 1) +
-                                " participant" +
-                                (collaboration.peers.length ? "s" : "")
-                              : collaboration.status === "error"
-                                ? "Could not connect. Leave the room and try again after checking your server and access."
-                                : "Connecting to the room…"}
-                          </p>
-                          <label>
-                            Room ID
-                            <input
-                              aria-label="Live editing room ID"
-                              readOnly
-                              value={API_URL ? remoteId : project.id}
-                            />
-                          </label>
-                        </>
-                      )}
-                      {!API_URL && (
-                        <p className="micro-copy">
-                          Open this design in another tab on this device to join
-                          the same room. The local collaboration server must be
-                          running.
-                        </p>
-                      )}
-                      <p className="micro-copy">
-                        Keep an exported project as a backup. Live rooms use
-                        separate storage; leave live editing before saving a
-                        workspace snapshot.
-                      </p>
-                    </>
-                  )}
-                  <div className="dialog-divider" />
-                  <div className="section-label">
-                    <Cloud size={15} />
-                    Connected workspace
-                  </div>
-                  {API_URL ? (
-                    <>
-                      <Button
-                        variant="secondary"
-                        disabled={busy || collabEnabled}
-                        onClick={() => void createShare()}
-                      >
-                        <Link size={16} />
-                        {collabEnabled
-                          ? "Leave live editing to create a view link"
-                          : user
-                            ? "Create a view-only link"
-                            : "Sign in to share online"}
-                      </Button>
-                      {shareUrl && (
-                        <div className="copy-link">
-                          <input
-                            value={shareUrl}
-                            readOnly
-                            aria-label="Share URL"
-                          />
-                          <IconButton
-                            icon={Copy}
-                            label="Copy share link"
-                            onClick={() =>
-                              navigator.clipboard
-                                .writeText(shareUrl)
-                                .then(() => notify("Link copied"))
-                                .catch(() =>
-                                  notify(
-                                    "Select the link and copy it manually.",
-                                  ),
-                                )
-                            }
-                          />
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <p className="micro-copy">
-                      Your designs are saved on this device. Export an editable
-                      project file to share a copy or keep a backup.
-                    </p>
-                  )}
+                  <p className="micro-copy">Your designs save on this device. Export an editable project file to keep a backup or transfer it to another browser.</p>
                 </div>
               )}
-              {modal === "account" &&
-                (user ? (
-                  <div className="dialog-form">
-                    <p>
-                      Signed in as <b>{user.name}</b>
-                      <br />
-                      {user.email}
-                    </p>
-                    <Button
-                      variant="secondary"
-                      onClick={async () => {
-                        await api("/api/auth/logout", { method: "POST" });
-                        leaveCollaboration();
-                        setUser(null);
-                        setWorkspaceId("");
-                        setRemoteId("");
-                        setModal(null);
-                      }}
-                    >
-                      Sign out
-                    </Button>
-                  </div>
-                ) : API_URL ? (
-                  <form className="dialog-form" onSubmit={auth}>
-                    <div className="auth-tabs">
-                      <button
-                        type="button"
-                        className={authMode === "signup" ? "selected" : ""}
-                        onClick={() => setAuthMode("signup")}
-                      >
-                        Create account
-                      </button>
-                      <button
-                        type="button"
-                        className={authMode === "login" ? "selected" : ""}
-                        onClick={() => setAuthMode("login")}
-                      >
-                        Sign in
-                      </button>
-                    </div>
-                    {authMode === "signup" && (
-                      <label>
-                        Your name
-                        <input
-                          name="name"
-                          required
-                          minLength={2}
-                          autoComplete="name"
-                        />
-                      </label>
-                    )}
-                    <label>
-                      Email address
-                      <input
-                        name="email"
-                        required
-                        type="email"
-                        autoComplete="email"
-                      />
-                    </label>
-                    <label>
-                      Password
-                      <input
-                        name="password"
-                        required
-                        minLength={12}
-                        type="password"
-                        autoComplete={
-                          authMode === "signup"
-                            ? "new-password"
-                            : "current-password"
-                        }
-                      />
-                    </label>
-                    {authError && <p className="form-error">{authError}</p>}
-                    <Button disabled={busy}>
-                      {busy
-                        ? "Just a moment…"
-                        : authMode === "signup"
-                          ? "Create your workspace"
-                          : "Welcome back"}
-                    </Button>
-                  </form>
-                ) : (
-                  <div className="dialog-form">
-                    <div className="info-card">
-                      <Cloud size={23} />
-                      <b>You’re in the local studio</b>
-                      <p>
-                        Your designs save automatically in this browser.
-                        Export an editable project file to keep a backup or
-                        open it on another device.
-                      </p>
-                    </div>
-                    <Button
-                      onClick={() => {
-                        setModal(null);
-                        setTool("Projects");
-                      }}
-                    >
-                      Explore your projects <ArrowRight size={17} />
-                    </Button>
-                  </div>
-                ))}
+              {modal === "account" && <div className="dialog-form"><p>Your designs and uploads save automatically in this browser. Download editable project files to keep a backup.</p><Button onClick={() => {setModal(null);setTool("Projects");}}>Open your projects</Button></div>}
               {modal === "help" && (
                 <div className="dialog-form">
                   <div className="shortcut-list">
@@ -2440,10 +1872,7 @@ export default function Studio() {
                     ))}
                   </div>
                   <p className="micro-copy">
-                    gradesign. is an MIT-licensed design studio. Local editing, layers,
-                    templates, comments, and exports work here. OAuth, AI tools,
-                    video export, and production collaboration require further
-                    integration.
+                    gradesign. is a personal design studio. Create pages, arrange elements, add notes, present your work, and download designs or editable project backups.
                   </p>
                 </div>
               )}
@@ -2453,7 +1882,7 @@ export default function Studio() {
         <Dialog.Root open={Boolean(deleteTarget)} onOpenChange={open => { if (!open && !projectBusy) setDeleteTarget(null); }}>
           <Dialog.Portal><Dialog.Overlay className="dialog-overlay" /><Dialog.Content className="dialog-content">
             <Dialog.Title>Delete project?</Dialog.Title>
-            <Dialog.Description>“{deleteTarget?.title.trim() || "Unnamed project"}” will move to Trash on this device. You can restore it from Projects. Any cloud copy stays unchanged.</Dialog.Description>
+            <Dialog.Description>“{deleteTarget?.title.trim() || "Unnamed project"}” will move to Trash on this device. You can restore it from Projects.</Dialog.Description>
             <div className="delete-project-actions">
               <Button variant="secondary" disabled={projectBusy} onClick={() => setDeleteTarget(null)}>Cancel</Button>
               <Button disabled={projectBusy} onClick={() => void removeProject()}>{projectBusy ? "Moving…" : "Move to Trash"}</Button>

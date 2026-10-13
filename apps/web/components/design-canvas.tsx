@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import {
+  loadSVGFromString,
   ActiveSelection,
   cache,
   Canvas,
@@ -34,8 +35,16 @@ import { isSafeCanvasImage, validateCanvasJSON } from "../lib/canvas-types";
 import { createTemplate, DESIGN_HEIGHT, DESIGN_WIDTH } from "../lib/templates";
 import { getCanvasSize, resizeCanvasJSON } from "../lib/document-size";
 
-type NamedObject = FabricObject & { id?: string; name?: string };
+import { borderObject, canRound, isImageFrame, roundElement, styleImageFrame, type StyledObject } from "../lib/element-style";
+import { safeIconSVG } from "../lib/svg-elements";
+type NamedObject = FabricObject & { id?: string; name?: string; assetType?: string };
 const SERIALIZED_PROPERTIES = [
+  "cutout",
+  "outlineWidth",
+  "outlineColor",
+  "cornerRadius",
+  "cornerPoints",
+  "assetType",
   "id",
   "name",
   "lockMovementX",
@@ -79,7 +88,13 @@ function describe(object: FabricObject, range?: TextRange): SelectionInfo {
   return {
     id: value.id ?? "selection",
     type: object.type,
-    fill: typeof style?.fill === "string" ? style.fill :
+    stroke: typeof borderObject(object).stroke === "string" ? borderObject(object).stroke as string : "#252821",
+    strokeWidth: borderObject(object).strokeWidth || 0,
+    cornerRadius: (object as StyledObject).cornerRadius ?? (object instanceof Rect ? object.rx : 0),
+    canRound: canRound(object),
+    canRemoveBackground: object instanceof FabricImage || isImageFrame(object),
+    canBorder: !(object instanceof IText) && (!(object instanceof Group) || isImageFrame(object)),
+    fill: object instanceof Line && typeof object.stroke === "string" ? object.stroke : typeof style?.fill === "string" ? style.fill :
       typeof object.fill === "string" ? object.fill : "#252821",
     fontFamily: style?.fontFamily ?? text?.fontFamily,
     fontSize: style?.fontSize ?? text?.fontSize,
@@ -114,6 +129,10 @@ function prepare(object: FabricObject, freshId = false) {
   if (isLocked(object)) object.set({ selectable: false, editable: false });
   if (object instanceof Group)
     object.getObjects().forEach((child) => prepare(child, freshId));
+  if (isImageFrame(object) && object instanceof Group && object.getObjects().length === 2) {
+    const border = borderObject(object);
+    styleImageFrame(object, (object as StyledObject).cornerRadius ?? 0, border.strokeWidth, border.stroke);
+  }
   return object;
 }
 
@@ -136,8 +155,10 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>(
       () => ({
         addText: (kind) => api.current?.addText(kind),
         addShape: (kind) => api.current?.addShape(kind),
-        addImage: async (src) => {
-          await api.current?.addImage(src);
+        removeImageBackground: async (process) => { await api.current?.removeImageBackground(process); },
+        addSVG: async (svg, name) => { await api.current?.addSVG(svg, name); },
+        addImage: async (src, name) => {
+          await api.current?.addImage(src, name);
         },
         updateSelection: (value) => api.current?.updateSelection(value),
         captureTextSelection: () => api.current?.captureTextSelection(),
@@ -166,6 +187,7 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>(
         export: (format, multiplier) =>
           api.current?.export(format, multiplier) ?? "",
         setBackground: (color) => api.current?.setBackground(color),
+        setBackgroundImage: async (src) => { await api.current?.setBackgroundImage(src); },
         applyTemplate: async (id) => {
           await api.current?.applyTemplate(id);
         },
@@ -197,6 +219,7 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>(
       let busy = false;
       let loadingJSON: DesignJSON | null = null;
       let revision = 0;
+      let backgroundRequest = 0;
       let loadController: AbortController | null = null;
       let history: string[] = [];
       let historyIndex = -1;
@@ -427,7 +450,8 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>(
               new Line([0, 0, 245, 0], {
                 ...options,
                 stroke: "#252821",
-                strokeWidth: 4,
+                strokeWidth: 12,
+                strokeLineCap: "round",
               }),
             );
           if (kind === "star") {
@@ -442,7 +466,46 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>(
             add(new Polygon(points, options));
           }
         },
-        async addImage(src) {
+        async removeImageBackground(process) {
+          if (!ready()) throw new Error("The canvas is still loading.");
+          const selected = canvas.getActiveObject();
+          const target = selected instanceof FabricImage ? selected : selected instanceof Group && isImageFrame(selected) ? selected.getObjects()[0] : null;
+          if (!(target instanceof FabricImage)) throw new Error("Select an image first.");
+          const ownRevision = revision, originalSource = target.getSrc();
+          const src = await process(originalSource);
+          if (!ready() || revision !== ownRevision || !selected || !canvas.getObjects().includes(selected) || target.getSrc() !== originalSource) throw new Error("The image changed while processing. Please select it and retry.");
+          const replacement = await FabricImage.fromURL(src);
+          if (!ready() || revision !== ownRevision || !canvas.getObjects().includes(selected) || target.getSrc() !== originalSource) return;
+          target.setElement(replacement.getElement(), {width: target.width, height: target.height});
+          let frame = selected;
+          if (selected instanceof FabricImage) {
+            canvas.discardActiveObject();
+            const index = canvas.getObjects().indexOf(selected);
+            frame = roundElement(selected,0);
+            canvas.remove(selected);canvas.insertAt(index,prepare(frame));
+          }
+          if (frame instanceof Group) {
+            (frame as StyledObject).cutout=true;
+            const border=borderObject(frame);
+            styleImageFrame(frame,0,border.strokeWidth,border.stroke);
+          }
+          target.dirty = true; frame.dirty = true; choose([frame]);
+          commit();
+        },
+        async addSVG(svg, name) {
+          if (!ready()) return;
+          const ownRevision = revision;
+          const parsed = await loadSVGFromString(safeIconSVG(svg));
+          const objects = parsed.objects.filter((item): item is FabricObject => !!item);
+          if (!ready() || ownRevision !== revision || !objects.length) return;
+          const object = new Group(objects);
+          object.scale(160 / Math.max(object.width, object.height, 1));
+          object.set({left: (canvas.width - object.getScaledWidth()) / 2, top: (canvas.height - object.getScaledHeight()) / 2, fill: "#252821"});
+          (object as NamedObject).name = name;
+          (object as NamedObject).assetType = "icon";
+          add(object);
+        },
+        async addImage(src, name) {
           if (!ready()) return;
           if (!isSafeCanvasImage(src, window.location.origin))
             throw new Error(
@@ -462,7 +525,7 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>(
               left: (canvas.width - object.getScaledWidth()) / 2,
               top: (canvas.height - object.getScaledHeight()) / 2,
             });
-            (object as NamedObject).name = "Uploaded image";
+            (object as NamedObject).name = name ?? "Uploaded image";
             add(object);
           } catch (cause) {
             if (!controller.signal.aborted) throw cause;
@@ -486,16 +549,27 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>(
             "charSpacing",
             "opacity",
             "angle",
+            "cornerRadius",
             "rx",
             "ry",
           ];
           const safe = Object.fromEntries(
             Object.entries(properties).filter(([key]) => allowed.includes(key)),
           );
-          canvas
-            .getActiveObjects()
-            .filter((object) => !isLocked(object))
-            .forEach((object) => {
+          const active = canvas.getActiveObjects();
+          const needsFrame = active.some(object => object instanceof FabricImage && ["cornerRadius", "stroke", "strokeWidth"].some(key => key in safe));
+          const needsRound = "cornerRadius" in safe && active.some(object => canRound(object));
+          if (needsFrame || needsRound) canvas.discardActiveObject();
+          const updated = active.map((original) => {
+              if (isLocked(original)) return original;
+              let object = original;
+              if ((needsFrame && original instanceof FabricImage) || (needsRound && canRound(original))) {
+                object = roundElement(original, Math.max(0, Math.min(1000, Number(safe.cornerRadius ?? (original as StyledObject).cornerRadius ?? 0))));
+                if (object !== original) {
+                  const index = canvas.getObjects().indexOf(original);
+                  canvas.remove(original); canvas.insertAt(index, prepare(object));
+                }
+              }
               if (object instanceof IText) {
                 const range = textRange(object);
                 const inline = Object.fromEntries(Object.entries(safe).filter(([key]) =>
@@ -518,9 +592,31 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>(
                 object.dirty = true;
                 object.initDimensions();
                 if (object.isEditing) object.renderCursorOrSelection();
-              } else object.set(safe);
+              } else {
+                if ((object as NamedObject).assetType === "icon" && typeof safe.fill === "string") {
+                  const color = safe.fill;
+                  const recolor = (child: FabricObject) => {
+                    if (child.stroke && child.stroke !== "none") child.set("stroke", color);
+                    if (child.fill && child.fill !== "none") child.set("fill", color);
+                    if (child instanceof Group) child.getObjects().forEach(recolor);
+                    child.dirty = true;
+                  };
+                  recolor(object);
+                }
+                const visual = { ...safe };
+                delete visual.cornerRadius;
+                if (object instanceof Line && typeof visual.fill === "string") { visual.stroke = visual.fill; delete visual.fill; }
+                if (isImageFrame(object) && object instanceof Group) {
+                  const border = borderObject(object);
+                  styleImageFrame(object, (object as StyledObject).cornerRadius ?? 0, Number(visual.strokeWidth ?? border.strokeWidth), (visual.stroke ?? border.stroke) as string);
+                  delete visual.stroke; delete visual.strokeWidth; delete visual.fill;
+                }
+                object.set(visual);
+              }
               object.setCoords();
+              return object;
             });
+          if (needsFrame || needsRound) choose(updated);
           commit();
         },
         captureTextSelection() {
@@ -622,7 +718,7 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>(
         async load(json) {
           await load(json, true);
         },
-        async resize(width, height, fitContents = true) {
+        async resize(width, height, fitContents = false) {
           if (!ready()) return;
           await load(resizeCanvasJSON(snapshot(), width, height, fitContents), false);
           commit();
@@ -695,6 +791,24 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>(
             canvas.backgroundColor = color;
             commit();
           }
+        },
+        async setBackgroundImage(src) {
+          if (!ready()) return;
+          const request = ++backgroundRequest;
+          if (!src) { canvas.backgroundImage = undefined; commit(); return; }
+          if (!isSafeCanvasImage(src, window.location.origin)) throw new Error("Choose a local raster image.");
+          const ownRevision = revision;
+          const controller = new AbortController();
+          pendingImages.add(controller);
+          try {
+            const image = await FabricImage.fromURL(src, { crossOrigin: "anonymous", signal: controller.signal });
+            if (!ready() || revision !== ownRevision || request !== backgroundRequest) return;
+            const scale = Math.max(canvas.width / image.width, canvas.height / image.height);
+            image.set({ scaleX: scale, scaleY: scale, left: (canvas.width - image.width * scale) / 2, top: (canvas.height - image.height * scale) / 2, selectable: false, evented: false });
+            canvas.backgroundImage = image;
+            commit();
+          } catch (error) { if (!controller.signal.aborted) throw error; }
+          finally { pendingImages.delete(controller); }
         },
         async applyTemplate(id) {
           await load(createTemplate(id, canvas.width, canvas.height), false);

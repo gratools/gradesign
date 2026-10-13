@@ -25,7 +25,7 @@ export type Project = {
   fonts?: CustomFont[];
   updatedAt: string;
 };
-export const STORAGE_KEY = "forma-projects-v1";
+export const STORAGE_KEY = "gradesign-projects-v1";
 export function freshProject(): Project {
   return {
     id: crypto.randomUUID(),
@@ -95,23 +95,4 @@ export function downloadFile(data: string | Blob, name: string) {
   link.download = name;
   link.click();
   if (blob instanceof Blob) setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
-export async function api<T>(
-  path: string,
-  options: RequestInit = {},
-): Promise<T> {
-  if (!API_URL)
-    throw new Error(
-      "Connect the backend using NEXT_PUBLIC_API_URL. See docs/backend.md.",
-    );
-  const res = await fetch(`${API_URL}${path}`, {
-    credentials: "include",
-    ...options,
-    headers: { "Content-Type": "application/json", ...options.headers },
-  });
-  const body = await res.json();
-  if (!res.ok)
-    throw new Error(body.error?.message ?? body.error ?? "Request failed");
-  return body as T;
 }

@@ -3,7 +3,7 @@ import { isProject, STORAGE_KEY, type Project } from "./project";
 const DATABASE_NAME = "gradesign-projects";
 const PROJECT_STORE = "projects";
 const META_STORE = "meta";
-const MIGRATION_KEY = "migrated-forma-projects-v1";
+const MIGRATION_KEY = "migrated-browser-projects-v1";
 const RECENT_LIMIT = 12;
 let databasePromise: Promise<IDBDatabase | null> | undefined;
 let operationQueue: Promise<void> = Promise.resolve();
