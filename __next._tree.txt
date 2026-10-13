@@ -1,0 +1,4 @@
+:HL["/gradesign/_next/static/css/80284ce9643d6cfb.css","style"]
+:HL["/gradesign/_next/static/css/b154ed029c2e761e.css","style"]
+1:[["children",{"s":"__PAGE__","h":160}]]
+0:{"b":"f6ArXDLXagcqVCzxXRy9P","t":{"t":{"s":"","h":80,"c":"$Q1"}}}

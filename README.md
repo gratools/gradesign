@@ -6,7 +6,7 @@ Create presentations, social posts, posters and everyday designs. No installatio
 
 ## Start designing
 
-1. Open [gradesign.](https://forma-open-design-studio.lukas-makela52.chatgpt.site/).
+1. Open [gradesign.](https://gratools.github.io/gradesign/).
 2. Choose **Blank canvas** or one of **93 editable templates** in Design.
 3. Add text, shapes, icons, emoji or your own images. Drag elements to arrange them.
 4. Use **Present** to show your pages or **Download** to export your work.
@@ -43,9 +43,11 @@ Background removal works best with a clear subject. Increase **Subject solidity*
 
 This is an early-access release. Export a project backup before major changes. Presentation annotations are temporary, and canvas undo history resets when switching pages.
 
-## Hosting your own copy
+## GitHub Pages
 
-Most people can simply use the website. If you want your own copy, follow the short [GitHub Pages guide](docs/github-pages.md). The repository contains the static editor and its bundled assets.
+Use the app at **https://gratools.github.io/gradesign/**. This repository page shows the README; the GitHub Pages address opens the editor.
+
+The release ZIP includes the built application at its root, alongside the source. See the [publishing instructions](docs/github-pages.md).
 
 For local development, install Node.js 24 and pnpm 11.25.0, then run:
 
@@ -54,7 +56,7 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Open http://localhost:3000. Run `pnpm build` to create a static website in `dist/`, and `pnpm test` for the portable checks. [Font details](docs/fonts.md) cover supported files and font licenses.
+Open http://localhost:3000. Run `pnpm build` to create the `/gradesign/` website in `dist/`, and `pnpm test` for the portable checks. [Font details](docs/fonts.md) cover supported files and font licenses.
 
 ## License
 

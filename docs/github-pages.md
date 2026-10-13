@@ -1,28 +1,32 @@
-# Publish your own gradesign. site
+# Publish gradesign. at gratools.github.io/gradesign/
 
-You can use the gradesign. website without downloading this repository. These steps are for people who want to host their own copy.
+The application address is **https://gratools.github.io/gradesign/**. The repository address, `github.com/gratools/gradesign`, displays source files and this README; it is not the application.
 
-1. Create a GitHub repository. Extract the ZIP and upload its contents to the repository root, including the hidden `.github` folder. The `package.json`, `apps` and `.github` entries should be at the top level.
-2. Commit to `main`. If your default branch has another name, update `branches` in `.github/workflows/pages.yml`.
-3. In **Settings → Pages**, select **GitHub Actions** as the build source.
-4. Open **Actions → Deploy gradesign to GitHub Pages → Run workflow**. Later pushes to `main` deploy automatically.
-5. Open the website URL shown by the completed deployment.
+## Upload the ready-built release
 
-The workflow builds the editor and sets the correct asset paths for your repository or custom domain. All required app assets are included. No API keys are needed.
+1. Extract `gradesign-github-ready.zip` on your computer.
+2. Upload the extracted contents to the root of the **gratools/gradesign** repository on the `main` branch. Do not upload the ZIP itself or put everything inside an extra folder. Include hidden files, particularly `.nojekyll`.
+3. Confirm the repository root contains `index.html`, `_next/`, `brand/`, `fonts/`, `elements/`, `templates/`, `background-removal/` and `.nojekyll`.
+4. In **Settings → Pages → Build and deployment**, choose **Deploy from a branch**, then **main** and **/ (root)**. Save.
+5. Wait for the Pages deployment to finish, then open **https://gratools.github.io/gradesign/**.
 
-## Your designs
+The built index opens the editor. `.nojekyll` ensures GitHub serves the `_next` application files. The release already uses `/gradesign` for all application and asset paths. GitHub's browser upload may require multiple batches; GitHub Desktop can commit the entire extracted folder at once.
 
-Projects and uploads are stored in each visitor's browser, not in the GitHub repository. Moving to a different site address does not transfer them. Download editable project backups from the old address and import them at the new address. Keep original image files for uploads you have not used in projects.
+## Rebuild after source changes
 
-## Build manually
+The ZIP also contains the editable source in `apps/web`, its dependencies list and lockfile, and the GitHub Actions workflow. To rebuild automatically, change **Settings → Pages → Source** to **GitHub Actions**, then run **Actions → Deploy gradesign to GitHub Pages → Run workflow**. Future pushes to `main` rebuild and publish the application. This mode deploys `dist/` generated from source rather than the prebuilt root files.
 
-Use Node.js 24 and pnpm 11.25.0:
+For a local build, use Node.js 24 and pnpm 11.25.0:
 
 ```sh
 pnpm install --frozen-lockfile
 pnpm build
 ```
 
-Publish the contents of `dist/` to a static host. Set `NEXT_PUBLIC_BASE_PATH=/REPOSITORY` before building for a subdirectory, or leave it empty for a domain root. Serve over HTTP or HTTPS.
+The production build defaults to `/gradesign`. Publish the contents of `dist/`; for branch publishing, replace the built files at the repository root with these contents. Development with `pnpm dev` uses http://localhost:3000. Set `NEXT_PUBLIC_BASE_PATH` explicitly only when building for another site path.
 
-The source ZIP excludes dependencies, build output, private environment files and machine-specific hosting configuration. It includes all six gradesign. brand files and third-party license notices.
+## Your designs
+
+Designs and uploads stay in each visitor's browser. They are not committed to GitHub. Work saved at a different website address does not transfer automatically: export editable project backups there and import them at the application address above.
+
+The release excludes private hosting settings, Git history, credentials, dependencies and build caches. It includes source, the ready-built website, brand assets and third-party license notices.
