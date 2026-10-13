@@ -1,0 +1,12 @@
+node_modules/
+.next/
+out/
+dist/
+.env
+.env.*
+!.env.example
+.sites-runtime/
+*.tsbuildinfo
+*.log
+*.tar.gz
+.DS_Store
