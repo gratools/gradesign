@@ -1,0 +1,2 @@
+# Hosting identity belongs only to the managed checkout, not distributable source.
+.openai export-ignore
