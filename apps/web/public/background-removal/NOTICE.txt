@@ -1,0 +1,13 @@
+Background removal assets
+
+U2Net-p: Xuebin Qin et al., U-2-Net (Apache-2.0).
+https://github.com/xuebinqin/U-2-Net
+Unmodified ONNX model distributed by rembg:
+https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx
+Verified MD5: 8e83ca70e441ab06c318d82300c84806
+
+ONNX Runtime Web 1.20.1: Microsoft Corporation (MIT).
+https://github.com/microsoft/onnxruntime
+Runtime JS, MJS and WASM copied unmodified from the npm package.
+See U2NET-LICENSE.txt and ONNX-LICENSE.txt.
+worker.js is gradesign integration code, not an upstream file.
