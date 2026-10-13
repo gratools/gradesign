@@ -1,0 +1,203 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Tier {
+  FREE
+  PRO
+}
+
+enum WorkspaceRole {
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+enum SharePermission {
+  VIEW
+  EDIT
+}
+
+enum AssetKind {
+  IMAGE
+  VIDEO
+  AUDIO
+  FONT
+  SVG
+}
+
+model User {
+  id           String         @id @default(cuid())
+  email        String         @unique
+  name         String
+  tier         Tier           @default(FREE)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  credential   Credential?
+  accounts     OAuthAccount[]
+  sessions     Session[]
+  memberships  Membership[]
+  designs      Design[]
+  assets       Asset[]
+  comments     Comment[]
+  shareLinks   ShareLink[]
+}
+
+// The credentials and session hashes never appear in public User responses.
+model Credential {
+  userId       String   @id
+  passwordHash String
+  updatedAt    DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Provider linking scaffold; OAuth callback routes are not implemented yet.
+// Store provider tokens encrypted through a managed secret store if added later.
+model OAuthAccount {
+  id                String @id @default(cuid())
+  userId            String
+  provider          String
+  providerAccountId String
+  user              User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Workspace {
+  id          String       @id @default(cuid())
+  name        String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  memberships Membership[]
+  folders     Folder[]
+  designs     Design[]
+  assets      Asset[]
+  brandKits   BrandKit[]
+}
+
+model Membership {
+  workspaceId String
+  userId      String
+  role        WorkspaceRole @default(VIEWER)
+  createdAt   DateTime      @default(now())
+  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([workspaceId, userId])
+  @@index([userId])
+}
+
+model Folder {
+  id          String    @id @default(cuid())
+  workspaceId String
+  name        String
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  designs     Design[]
+
+  @@index([workspaceId])
+}
+
+model Design {
+  id           String      @id @default(cuid())
+  workspaceId  String
+  createdById  String
+  folderId     String?
+  title        String
+  document     Json        @db.JsonB
+  revision     Int         @default(0)
+  thumbnailUrl String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  workspace    Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy    User        @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  folder       Folder?     @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  shareLinks   ShareLink[]
+  comments     Comment[]
+
+  @@index([workspaceId, updatedAt])
+  @@index([folderId])
+}
+
+model Asset {
+  id          String    @id @default(cuid())
+  workspaceId String
+  uploadedById String
+  kind        AssetKind
+  name        String
+  storageKey  String    @unique
+  mimeType    String
+  sizeBytes   Int
+  width       Int?
+  height      Int?
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  uploadedBy  User      @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId])
+}
+
+model BrandKit {
+  id           String    @id @default(cuid())
+  workspaceId  String
+  name         String
+  colors       Json      @db.JsonB
+  typography   Json      @db.JsonB
+  logoAssetIds String[]  @default([])
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+}
+
+model ShareLink {
+  id          String          @id @default(cuid())
+  designId    String
+  createdById String
+  tokenHash   String          @unique
+  permission  SharePermission @default(VIEW)
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  createdAt   DateTime        @default(now())
+  design      Design          @relation(fields: [designId], references: [id], onDelete: Cascade)
+  createdBy   User            @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([designId])
+  @@index([expiresAt])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  designId  String
+  authorId  String
+  pageId    String
+  x         Float
+  y         Float
+  body      String
+  resolved  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  design    Design   @relation(fields: [designId], references: [id], onDelete: Cascade)
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([designId, createdAt])
+}
