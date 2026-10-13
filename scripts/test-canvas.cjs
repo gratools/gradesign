@@ -62,7 +62,30 @@ function load(relativeFile) {
 const { getCanvasSize, resizeCanvasJSON, PRESENTATION_SIZES } = load("apps/web/lib/document-size.ts");
 const { validateCanvasJSON } = load("apps/web/lib/canvas-types.ts");
 const { createTemplate } = load("apps/web/lib/templates.ts");
+const {keyPixels,dilateAlpha}=load('apps/web/lib/cutout.ts');
+const keyed=new Uint8ClampedArray([0,255,0,255,255,0,0,255,0,155,0,200]);
+keyPixels(keyed,{color:'#00ff00',tolerance:80,softness:40,spill:0});
+assert.deepEqual([...keyed],[0,255,0,0,255,0,0,255,0,155,0,100]);
+const seed=new Uint8ClampedArray(25);seed[12]=255;
+const dilated=dilateAlpha(seed,5,5,1);
+assert.equal([...dilated].filter(x=>x===255).length,9);
+assert.equal(dilated[0],0);assert.equal(dilated[6],255);
+assert.deepEqual(dilateAlpha(seed,5,5,0),seed);
+const {libraryTemplates,libraryScene}=load('apps/web/lib/template-library.ts');
+assert.equal(libraryTemplates.length,90);
+for(const template of libraryTemplates){validateCanvasJSON(libraryScene(template.id));assert(fs.existsSync(path.join(repository,'apps/web/public/templates',template.id+'.png')));}
+console.log('PASS: chroma transparency/softness, alpha dilation, and 90 template scenes/previews.');
 const origin = "https://gradesign.test";
+const { safeIconSVG } = load('apps/web/lib/svg-elements.ts');
+const catalog = JSON.parse(fs.readFileSync(path.join(repository, 'apps/web/public/elements/lucide.json')));
+for (const svg of Object.values(catalog)) assert(safeIconSVG(svg));
+const emojiCatalog = JSON.parse(fs.readFileSync(path.join(repository, 'apps/web/public/elements/emoji.json')));
+assert.equal(emojiCatalog.find(e => e.emoji === '🇺🇸').flag, 'us');
+for (const item of emojiCatalog.filter(e => e.flag)) {
+  const bytes = fs.readFileSync(path.join(repository, 'apps/web/public/elements/flags', item.flag + '.png'));
+  assert.equal(bytes.subarray(1, 4).toString(), 'PNG');
+}
+console.log('PASS: all ' + Object.keys(catalog).length + ' bundled SVGs validated; every flag resolves to a PNG.');
 
 assert.deepEqual(getCanvasSize({ objects: [] }), { width: 960, height: 640 });
 for (const size of PRESENTATION_SIZES) {
@@ -78,7 +101,10 @@ for (const dims of [[0, 1080], [3841, 1080], [1920, 179], [1920, 1080.1], [NaN, 
   assert.throws(() => validateCanvasJSON({ objects: [], width: dims[0], height: dims[1] }, origin));
 }
 const original = { objects: [{ type: "Group", left: 20, top: 40, scaleX: 2, scaleY: 3, angle: 30, objects: [{ left: 1, top: 2 }] }] };
-const resized = resizeCanvasJSON(original, 1920, 1080);
+let repeated = original;
+for(let i=0;i<5;i++) { repeated=resizeCanvasJSON(repeated,1080,1920); repeated=resizeCanvasJSON(repeated,1920,1080); }
+assert.deepEqual(repeated.objects,original.objects,'repeated default resizing must preserve artwork size and position');
+const resized = resizeCanvasJSON(original, 1920, 1080, true);
 assert.equal(original.objects[0].left, 20);
 assert.equal(resized.objects[0].scaleX, 3.375);
 assert.equal(resized.objects[0].angle, 30);
@@ -196,8 +222,8 @@ async function run() {
   await React.act(async () => { await ref.current.resize(1080, 1920); await pause(); });
   assert.equal(canvas.width, 1080);
   assert.equal(canvas.height, 1920);
-  assert.equal(ref.current.getJSON().objects[0].scaleX, 1.125);
-  assert.equal(ref.current.getJSON().objects[0].top, 656.25);
+  assert.equal(ref.current.getJSON().objects[0].scaleX, before.objects[0].scaleX);
+  assert.equal(ref.current.getJSON().objects[0].top, before.objects[0].top);
   await React.act(async () => { ref.current.undo(); await pause(); });
   assert.equal(canvas.width, 960);
   assert.equal(canvas.height, 640);
@@ -210,7 +236,104 @@ async function run() {
   assert.equal(canvas.width, 1080);
   assert.equal(canvas.height, 1920);
 
+  await React.act(async () => {
+    await ref.current.addSVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M2 2 L22 22" fill="none" stroke="currentColor" stroke-width="2"/></svg>', 'Icon: test');
+    ref.current.updateSelection({fill:'#304bff'});
+    await pause();
+  });
+  assert.equal(canvas.getActiveObject().getObjects()[0].stroke, '#304bff');
+  const iconScene = ref.current.getJSON();
+  await React.act(async () => { await ref.current.load(iconScene); await pause(); });
+  assert.equal(canvas.getObjects()[0].assetType, 'icon');
+  assert.equal(canvas.getObjects()[0].getObjects()[0].stroke, '#304bff');
+  await assert.rejects(ref.current.addSVG('<svg><image href="https://example.com/x"/></svg>', 'unsafe'));
+  await assert.rejects(ref.current.addSVG('<svg><script>alert(1)</script></svg>', 'unsafe'));
+  assert.match(ref.current.export('svg'), /48,75,255/);
+  await React.act(async () => { await ref.current.applyTemplate('blank'); await pause(); });
+  await React.act(async () => {
+    ref.current.addShape('line'); ref.current.updateSelection({fill:'#ff0000'}); await pause();
+  });
+  assert.equal(canvas.getActiveObject().stroke, '#ff0000');
+  assert.equal(canvas.getActiveObject().strokeWidth, 12);
+  for (const kind of ['rectangle', 'triangle', 'star']) {
+    await React.act(async () => {ref.current.addShape(kind); ref.current.updateSelection({cornerRadius:20,stroke:'#123456',strokeWidth:8}); await pause();});
+    assert.equal(canvas.getActiveObject().stroke, '#123456');
+    assert.equal(selection.cornerRadius,20);
+    const rounded = ref.current.getJSON();
+    await React.act(async () => {await ref.current.load(rounded); await pause();});
+    const last = canvas.getObjects().at(-1);
+    assert.equal(last.strokeWidth,8);
+    assert(kind === 'rectangle' ? last.rx === 20 : last.cornerPoints.length > 0);
+  }
+  await React.act(async () => {await ref.current.applyTemplate('blank'); await pause();});
   // Grouping, saving and reloading preserve individual character styles too.
+  const backdrop = fabric.util.createCanvasElement();
+  backdrop.width = 20; backdrop.height = 10;
+  backdrop.getContext("2d").fillRect(0, 0, 20, 10);
+  await React.act(async () => {await ref.current.addImage(backdrop.toDataURL()); ref.current.updateSelection({cornerRadius:3,stroke:'#ff0000',strokeWidth:2}); await pause();});
+  const frame = canvas.getActiveObject();
+  assert.equal(frame.assetType,'image-frame');
+  assert.equal(frame.getObjects()[0].clipPath.rx,3);
+  assert.equal(frame.getObjects()[1].stroke,'#ff0000');
+  assert.equal(frame.getObjects()[1].width,18);
+  const aligned = (frame) => {
+    const [image, border] = frame.getObjects();
+    image.setCoords(); border.setCoords();
+    image.getCoords().forEach((point, index) => {
+      assert(Math.abs(point.x - border.getCoords()[index].x) < 0.001, 'border x aligns with image');
+      assert(Math.abs(point.y - border.getCoords()[index].y) < 0.001, 'border y aligns with image');
+    });
+  };
+  aligned(frame);
+  frame.set({scaleX: 2.4, scaleY: 1.7, angle: 37}); frame.setCoords();
+  aligned(frame);
+  await React.act(async () => {ref.current.updateSelection({strokeWidth:4,cornerRadius:4}); await pause();});
+  aligned(frame);
+  // Simulate a saved frame from the old offset implementation.
+  frame.getObjects()[1].set({originX:'left',originY:'top',left:frame.getObjects()[0].left+2,top:frame.getObjects()[0].top+2});
+  const framedScene=ref.current.getJSON();
+  await React.act(async () => {await ref.current.load(framedScene); await pause();});
+  assert.equal(canvas.getObjects()[0].getObjects()[0].clipPath.rx,4);
+  aligned(canvas.getObjects()[0]);
+  const beforeRemoval = ref.current.getJSON();
+  const processed = fabric.util.createCanvasElement(); processed.width=20;processed.height=10;
+  processed.getContext('2d').fillRect(5,2,10,6);
+  await React.act(async () => {
+    canvas.setActiveObject(canvas.getObjects()[0]);
+    await ref.current.removeImageBackground(async () => processed.toDataURL()); await pause();
+  });
+  assert.equal(canvas.getObjects()[0].getObjects()[0].getSrc(),processed.toDataURL());
+  assert.equal(canvas.getObjects()[0].getObjects()[0].clipPath,undefined);
+  assert.equal(canvas.getObjects()[0].cutout,true);
+  const ring = canvas.getObjects()[0].getObjects()[1].fill.source.getContext('2d').getImageData(0,0,20,10).data;
+  assert.equal(ring[(5*20+10)*4+3],0,'outline leaves opaque subject interior unchanged');
+  assert(canvas.getObjects()[0].getObjects()[1].fill instanceof fabric.Pattern);
+  assert.equal(ring[(5*20)*4+3],0,'outline does not draw a rectangular frame');
+  aligned(canvas.getObjects()[0]);
+  await React.act(async () => {ref.current.undo();await pause();});
+  assert.deepEqual(ref.current.getJSON(),beforeRemoval);
+  let releaseMask; const deferred = new Promise(resolve=>{releaseMask=resolve});
+  canvas.setActiveObject(canvas.getObjects()[0]);
+  const staleRemoval = ref.current.removeImageBackground(()=>deferred);
+  await React.act(async () => {await ref.current.load(beforeRemoval);await pause();});
+  releaseMask(processed.toDataURL());
+  await assert.rejects(staleRemoval,/changed while processing/);
+  assert.deepEqual(ref.current.getJSON(),beforeRemoval);
+  assert.match(ref.current.export('svg'), /clipPath/);
+  await React.act(async () => {await ref.current.applyTemplate('blank'); await ref.current.setBackgroundImage(backdrop.toDataURL()); await pause();});
+  assert.equal(canvas.getObjects().length, 0, "background is not an editable layer");
+  assert.equal(canvas.backgroundImage.getScaledHeight(), 1920);
+  assert.equal(canvas.backgroundImage.selectable, false);
+  const backgroundScene = ref.current.getJSON();
+  assert(backgroundScene.backgroundImage.src.startsWith("data:image/png"));
+  await React.act(async () => { await ref.current.setBackgroundImage(null); await pause(); });
+  assert.equal(canvas.backgroundImage, undefined);
+  await React.act(async () => { ref.current.undo(); await pause(); });
+  assert(canvas.backgroundImage, "undo restores the background");
+  await React.act(async () => { await ref.current.load(backgroundScene); await pause(); });
+  assert.equal(canvas.backgroundImage.getScaledHeight(), 1920, "background survives reload");
+  assert.match(ref.current.export("svg"), /data:image\/png/);
+
   await React.act(async () => {
     await ref.current.load(richScene);
     ref.current.addShape("circle");
